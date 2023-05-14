@@ -6,7 +6,7 @@ KBDuplicator = KBDuplicator or {}
 
 if game.SinglePlayer() then
 	for i=1, 5 do
-		print("[KBDuplicator] - You are on singleplayer KBDuplicator is disable and cannot work please lunch a pear to pear server")
+		print("[KBDuplicator] - You are on singleplayer KBDuplicator is disable and cannot work please launch a peer to peer server")
 	end
 end
 
