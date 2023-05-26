@@ -10,9 +10,7 @@ if game.SinglePlayer() then
 	end
 end
 
-local function checkIfOwner(ent, ply)
-	if ply:IsSuperAdmin() then return true end
-	
+local function checkIfOwner(ent, ply)	
 	if isfunction(ent.CPPIGetOwner) then
 		if ent:CPPIGetOwner() == ply or (ent:GetOwner() == ply) then return true end
 	else
@@ -41,12 +39,24 @@ local function getSentence(key)
 	return langToReturn
 end
 
+local function getClampedAxisPos(pos)
+	pos = pos or Vector()
+
+	pos.x = math.Clamp(pos.x, -1000, 1000)
+	pos.y = math.Clamp(pos.y, -1000, 1000)
+	pos.z = math.Clamp(pos.z, -1000, 1000)
+	
+	return pos
+end
+
 KBDuplicator.BlackListClass = {
 	["viewmodel"] = true,
 	["func_door_rotating"] = true,
 	["prop_door_rotating"] = true,
 	["func_door"] = true,
 	["keypad"] = true,
+	["sent_ball"] = true,
+	["phys_magnet"] = true,
 }
 
 KBDuplicator.ClassToType = {
@@ -465,6 +475,10 @@ KBDuplicator.Constraints = {
 			local ent1 = tblOldEntIndex[tbl.ent1] or Entity(0)
 			local ent2 = tblOldEntIndex[tbl.ent2] or Entity(0)
 
+			if ent1 == ent2 or not ent.GetPos or not ent2.GetPos or ent:GetPos():Distance(ent2:GetPos()) > 100 then
+				return
+			end
+			
 			if not checkIfOwner(ent1, ply) or not checkIfOwner(ent2, ply) then return end
 
 			constraint.NoCollide(ent1, ent2, tbl.bone1, tbl.bone2)
@@ -568,8 +582,8 @@ KBDuplicator.Constraints = {
 				["ent2"] = (IsValid(tbl.Ent2) and tbl.Ent2:EntIndex() or nil),
 				["bone1"] = tbl.Bone1,
 				["bone2"] = tbl.Bone2,
-				["lpos1"] = tbl.LPos1,
-				["lpos2"] = tbl.LPos2,
+				["lpos1"] = getClampedAxisPos(tbl.LPos1),
+				["lpos2"] = getClampedAxisPos(tbl.LPos2),
 				["forcelimit"] = tbl.forcelimit,
 				["torquelimit"] = tbl.torquelimit,
 				["friction"] = tbl.friction,
@@ -586,7 +600,7 @@ KBDuplicator.Constraints = {
 
 			if not checkIfOwner(ent1, ply) or not checkIfOwner(ent2, ply) then return end
 
-			constraint.Axis(ent1, ent2, tbl.bone1, tbl.bone2, tbl.lpos1, tbl.lpos2, tbl.forcelimit, tbl.torquelimit, tbl.friction, tbl.nocollide, tbl.LocalAxis, tbl.DontAddTable)
+			constraint.Axis(ent1, ent2, tbl.bone1, tbl.bone2, getClampedAxisPos(tbl.lpos1), getClampedAxisPos(tbl.lpos2), tbl.forcelimit, tbl.torquelimit, tbl.friction, tbl.nocollide, tbl.LocalAxis, tbl.DontAddTable)
 		end,
 	},
 	["AdvBallsocket"] = {
@@ -992,7 +1006,9 @@ if CLIENT then
 		local constructionTable = util.JSONToTable(fileRead)
 		local entites = constructionTable["entities"] or {}
 		
-		for k,v in ipairs(entites) do
+		for k, v in ipairs(entites) do
+			if not isstring(v.model) or v.model == nil then continue end
+
 			local ent = ClientsideModel(v.model, RENDERGROUP_BOTH)
 			ent:Spawn()
 			ent.tableInfo = v
@@ -1096,10 +1112,17 @@ if CLIENT then
 
 		for k, v in ipairs(files) do
 			local fileRead = file.Read("kb_duplicator/"..v)
+
 			local constructionTable = util.JSONToTable(fileRead)
+			if not istable(constructionTable) then continue end
+
 			local infos = constructionTable["infos"]
 			local entities = constructionTable["entities"]
+
 			if not istable(infos) or not istable(entities) then continue end
+
+			if not isstring(v) then continue end
+			if not isnumber(tonumber(infos["date"])) then continue end
 
 			local savedConstruction = vgui.Create("DPanel", scrollConstructions)
 			savedConstruction:Dock(TOP)
@@ -1202,8 +1225,6 @@ if CLIENT then
 				net.WriteUInt(v:EntIndex(), 12)
 			end
 		net.SendToServer()
-
-		print("qikjdhnq sdjkqs")
 	end
 
 	local function saveConstruction(constraintsTable)
@@ -1544,6 +1565,7 @@ if CLIENT then
 		draw.DrawText("●", "KBDuplicator:Font:04", posToScreen2.x, posToScreen2.y - 20, KBDuplicator.Constants["white2"], TEXT_ALIGN_CENTER)
 
 		for k, v in pairs(ents.FindInBox(pos1, pos2)) do
+			if not checkIfOwner(v, KBDuplicator.LocalPlayer) then continue end
 			if v:IsWeapon() or v:IsVehicle() or v:IsNPC() or v:IsPlayer() or KBDuplicator.BlackListClass[v:GetClass()] then continue end
 
 			if KBDuplicator.Halo && KBDuplicator.Halo.Add then
@@ -1685,6 +1707,9 @@ else
 
 		if tools:GetClass() != "gmod_tool" then return end
 
+		local canDuplicate = hook.Run("KBDuplicator:CanDuplicate", ply)
+		if canDuplicate == false then return end
+
 		--[[ Spawn protection ]]
 		if uInt == 1 then
 			local steamId = ply:SteamID64()
@@ -1744,7 +1769,7 @@ else
 				local tableIndexCount = net.ReadUInt(16)
 				for j=1, tableIndexCount do
 					local propertyType = net.ReadString()
-
+	
 					local propertiesTableCount = net.ReadUInt(16)
 					for h=1, propertiesTableCount do
 						local propertiesCount = net.ReadUInt(16)
@@ -1787,6 +1812,9 @@ else
 			
 			local entitiesOldIndex = {}
 			local incrementId = 0
+
+			hook.Run("KBDuplicator:StartPast", ply, entitiesToSpawn)
+
 			timer.Create(timerName, 0.1, #entitiesToSpawn, function()
 				incrementId = incrementId + 1
 
@@ -1799,6 +1827,8 @@ else
 				else
 					if hook.Run("PlayerSpawnSENT", ply, entClass) == false then return end
 				end
+
+				if KBDuplicator.BlackListClass[entClass] then return end
 				
 				local prop 
 				if istable(KBDuplicator.PropertiesEnt[entClass]) && isfunction(KBDuplicator.PropertiesEnt[entClass]["load"]) && KBDuplicator.PropertiesEnt[entClass]["accepted"] then
@@ -1818,6 +1848,17 @@ else
 					prop = ents.Create(entClass)
 				end
 				if not IsValid(prop) then return end
+
+				if entityTable.model ~= nil then
+					if not util.IsValidModel(entityTable.model) then
+						
+						if entClass == "prop_effect" then
+							return
+						else
+							entityTable.model = "models/props_borealis/bluebarrel001.mdl"
+						end
+					end
+				end
 
 				if isstring(entityTable.model) then
 					prop:SetModel(entityTable.model)
@@ -1883,6 +1924,8 @@ else
 				local phys = prop:GetPhysicsObject()
 				if IsValid(phys) then
 					phys:EnableMotion(false)
+					phys:Sleep()
+
 					phys:SetMaterial((entityTable.physMaterial or ""))
 				end
 
@@ -1954,6 +1997,8 @@ else
 					undo.Finish()
 
 					ply.KBDuplicator["undoConstruction"] = {}
+
+					hook.Run("KBDuplicator:SuccessPast", ply, entitiesToSpawn)
 
 					createNotify(ply, getSentence("successPast"), 0, 5)
 				end
