@@ -10,7 +10,9 @@ if game.SinglePlayer() then
 	end
 end
 
-local function checkIfOwner(ent, ply)	
+local function checkIfOwner(ent, ply)
+	if ply:IsAdmin() or ply:IsSuperAdmin() then return true end
+	
 	if isfunction(ent.CPPIGetOwner) then
 		if ent:CPPIGetOwner() == ply or (ent:GetOwner() == ply) then return true end
 	else
