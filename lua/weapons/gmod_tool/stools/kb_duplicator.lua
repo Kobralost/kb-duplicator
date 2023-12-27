@@ -51,6 +51,38 @@ local function getClampedAxisPos(pos)
 	return pos
 end
 
+local function getWhitelistedMaterials()
+	if not istable(KBDuplicator.WhitelistedMaterials) then
+		KBDuplicator.WhitelistedMaterials = {}
+		local mats = list.GetForEdit("OverrideMaterials")
+		
+		for k, v in pairs(mats) do
+			KBDuplicator.WhitelistedMaterials[v] = true
+		end
+		return KBDuplicator.WhitelistedMaterials
+	elseif istable(KBDuplicator.WhitelistedMaterials) then
+		return KBDuplicator.WhitelistedMaterials
+	end
+
+	return {}
+end
+
+local function getRenderMaterials()
+	if not istable(KBDuplicator.WhitelistRender) then
+		KBDuplicator.WhitelistRender = {}
+		local mats = list.GetForEdit("RenderFX")
+		
+		for k, v in pairs(mats) do
+			KBDuplicator.WhitelistRender[k] = true
+		end
+		return KBDuplicator.WhitelistRender
+	elseif istable(KBDuplicator.WhitelistRender) then
+		return KBDuplicator.WhitelistRender
+	end
+
+	return {}
+end
+
 KBDuplicator.BlackListClass = {
 	["viewmodel"] = true,
 	["func_door_rotating"] = true,
@@ -998,7 +1030,7 @@ if CLIENT then
 			end
 		end
 
-		KBDuplicator["drawingEnt"] = {}
+		KBDuplicator["drawingEnt"] = nil
 	end
 	
 	local function createDrawConstructions()
@@ -1008,6 +1040,7 @@ if CLIENT then
 		local constructionTable = util.JSONToTable(fileRead)
 		local entites = constructionTable["entities"] or {}
 		
+		KBDuplicator["drawingEnt"] = KBDuplicator["drawingEnt"] or {}
 		for k, v in ipairs(entites) do
 			if not isstring(v.model) or v.model == nil then continue end
 
@@ -1018,6 +1051,7 @@ if CLIENT then
 			KBDuplicator["drawingEnt"][#KBDuplicator["drawingEnt"] + 1] = ent
 		end
 
+		KBDuplicator["drawing"] = true
 		KBDuplicator["difPos"] = constructionTable["infos"]["difPos"]
 		KBDuplicator["originalPos"] = constructionTable["infos"]["originalPos"]
 	end
@@ -1032,12 +1066,18 @@ if CLIENT then
 
 		local pos2 = infos["pos2"] or 200
 
+		if not isvector(KBDuplicator["originalPos"][1]) then return end
+		if not isvector(KBDuplicator["originalPos"][2]) then return end
+		if not isvector(KBDuplicator["difPos"]) then return end
+		if not isnumber(KBDuplicator["rotation"]) then return end
+
 		net.Start("KBDuplicator:MainNet")
 			net.WriteUInt(1, 5)
 			net.WriteUInt(#entites, 32)
 			net.WriteBool(KBDuplicator["pastToOrigin"])
 			net.WriteVector(KBDuplicator["originalPos"][1])
 			net.WriteVector(KBDuplicator["originalPos"][2])
+			net.WriteVector(KBDuplicator["hitPos"] or KBDuplicator["originalPos"][1])
 			net.WriteVector(KBDuplicator["difPos"])
 			net.WriteUInt(KBDuplicator["rotation"], 10)
 			net.WriteUInt(pos2, 16)
@@ -1232,6 +1272,8 @@ if CLIENT then
 	local function saveConstruction(constraintsTable)
 		local name = entryName:GetText()
 
+		if KBDuplicator["drawingEnt"] != nil then return end 
+
 		if not isstring(name) or #name <= 0 or file.Exists("kb_duplicator/"..name..".txt", "DATA") then 
 			notification.AddLegacy(getSentence("uniqueName"), NOTIFY_ERROR, 5)
 			return 
@@ -1290,6 +1332,7 @@ if CLIENT then
 			["ownerName"] = KBDuplicator.LocalPlayer:Name(),
 			["difPos"] = WorldToLocal(pos2, KBDuplicator.Constants["angle0"], pos1, KBDuplicator.Constants["angle0"]),
 			["originalPos"] = {pos1, pos2},
+			["hitPos"] = (KBDuplicator["hitPos"] or pos1),
 			["pos2"] = KBDuplicator["pos2"],
 		}
 
@@ -1483,8 +1526,18 @@ if CLIENT then
 		if KBDuplicator["spamClick"] > curTime then return end
 		KBDuplicator["spamClick"] = curTime + 0.5
 
-		removeDrawConstructions()
-		resetToolVariables()
+		KBDuplicator["originalPos"] = KBDuplicator["originalPos"] or {}
+		if not isvector(KBDuplicator["originalPos"][1]) && not isvector(KBDuplicator["originalPos"][2]) then
+			local hitPos = self:GetOwner():GetEyeTrace().HitPos
+
+			KBDuplicator["originalPos"][1] = hitPos + (Vector(1, 1, 1)*(KBDuplicator["pos2"] or 1))
+			KBDuplicator["originalPos"][2] = hitPos + (Vector(-1, -1, -1)*(KBDuplicator["pos2"] or 1))
+
+			KBDuplicator["hitPos"] = hitPos
+		else
+			removeDrawConstructions()
+			resetToolVariables()
+		end
 	end
 
 	function TOOL:Reload()
@@ -1566,12 +1619,13 @@ if CLIENT then
 		draw.DrawText(getSentence("pos"):format("2"), "KBDuplicator:Font:05", posToScreen2.x, posToScreen2.y - 25, KBDuplicator.Constants["white2"], TEXT_ALIGN_CENTER)
 		draw.DrawText("●", "KBDuplicator:Font:04", posToScreen2.x, posToScreen2.y - 20, KBDuplicator.Constants["white2"], TEXT_ALIGN_CENTER)
 
-		for k, v in pairs(ents.FindInBox(pos1, pos2)) do
-			if not checkIfOwner(v, KBDuplicator.LocalPlayer) then continue end
-			if v:IsWeapon() or v:IsVehicle() or v:IsNPC() or v:IsPlayer() or KBDuplicator.BlackListClass[v:GetClass()] then continue end
+		if KBDuplicator["drawingEnt"] == nil then
+			for k, v in pairs(ents.FindInBox(pos1, pos2)) do
+				if not checkIfOwner(v, KBDuplicator.LocalPlayer) then continue end
+				if v:IsWeapon() or v:IsVehicle() or v:IsNPC() or v:IsPlayer() or KBDuplicator.BlackListClass[v:GetClass()] then continue end
 
-			if KBDuplicator.Halo && KBDuplicator.Halo.Add then
-				KBDuplicator.Halo.Add(v, (checkIfOwner(v, KBDuplicator.LocalPlayer) and KBDuplicator.Constants["green"] or KBDuplicator.Constants["red"]), OUTLINE_MODE_BOTH)
+				local pos = (v:GetPos() + v:OBBCenter()):ToScreen()
+				draw.DrawText("⚫", "KBDuplicator:Font:05", pos.x, pos.y - 10, KBDuplicator.Constants["green"], TEXT_ALIGN_CENTER)
 			end
 		end
 	end)
@@ -1689,6 +1743,7 @@ else
 			net.WriteUInt(time, 5)
 		net.Send(ply)
 	end
+	
 
 	net.Receive("KBDuplicator:MainNet", function(len, ply)
 		ply.KBDuplicator = ply.KBDuplicator or {}
@@ -1724,6 +1779,7 @@ else
 			local pastToOrigin = net.ReadBool()
 			local originalPos1 = net.ReadVector()
 			local originalPos2 = net.ReadVector()
+			local hitPos = net.ReadVector()
 			local difPos = net.ReadVector()
 			local rotation = net.ReadUInt(10)
 			local pos2Add = net.ReadUInt(16)
@@ -1735,7 +1791,7 @@ else
 
 			local dir = (pos2 - pos1):Angle() + (pastToOrigin and KBDuplicator.Constants["angle0"] or Angle(0, ply:EyeAngles().y + rotation, 0))
 			
-			if pos1:DistToSqr(ply:GetPos()) > 5000000 then
+			if pos1:DistToSqr(ply:GetPos()) > 5000000 && hitPos:DistToSqr(ply:GetPos()) > 5000000 then
 				createNotify(ply, getSentence("tooFar"), 1, 5)
 				return 
 			end
@@ -1817,7 +1873,8 @@ else
 
 			hook.Run("KBDuplicator:StartPast", ply, entitiesToSpawn)
 
-			timer.Create(timerName, 0.1, #entitiesToSpawn, function()
+			local timerTime = 0.1
+			timer.Create(timerName, timerTime, #entitiesToSpawn, function()
 				incrementId = incrementId + 1
 
 				local entityTable = entitiesToSpawn[incrementId]
@@ -1871,11 +1928,19 @@ else
 				if isangle(entityTable.ang) then
 					prop:SetAngles(entityTable.ang)
 				end
+				
+				local renderMaterial = getRenderMaterials()
+
 				if isnumber(entityTable.renderFx) then
-					prop:SetRenderFX(entityTable.renderFx)
+					if renderMaterial[entityTable.renderFx] then 
+						prop:SetRenderFX(entityTable.renderFx)
+					end
 				end
+
 				if isnumber(entityTable.renderGroup) then
-					prop:SetRenderMode(entityTable.renderGroup)
+					if renderMaterial[entityTable.renderGroup] then 
+						prop:SetRenderMode(entityTable.renderGroup)
+					end
 				end					
 				if isfunction(prop.CPPISetOwner) then
 					prop:CPPISetOwner(ply)
@@ -1893,7 +1958,11 @@ else
 
 				if isstring(entityTable.material) then
 					if hook.Run("CanTool", ply, {["Entity"] = prop}, "material", toolsTable["material"], 1) then
-						prop:SetMaterial(entityTable.material)
+						local whitelistMaterials = getWhitelistedMaterials()
+
+						if whitelistMaterials[entityTable.material] then
+							prop:SetMaterial(entityTable.material)
+						end
 					end
 				end
 
@@ -1987,23 +2056,25 @@ else
 						end
 					end)
 
-					ply.KBDuplicator["undoConstruction"] = ply.KBDuplicator["undoConstruction"] or {}
-
-					undo.Create("KBDuplicator")
-					for k, v in pairs(ply.KBDuplicator["undoConstruction"]) do 
-						if not IsValid(v) then continue end
-
-						undo.AddEntity(v)
-						undo.SetPlayer(ply)
-					end
-					undo.Finish()
-
-					ply.KBDuplicator["undoConstruction"] = {}
-
 					hook.Run("KBDuplicator:SuccessPast", ply, entitiesToSpawn)
 
 					createNotify(ply, getSentence("successPast"), 0, 5)
 				end
+			end)
+
+			timer.Simple((timerTime*#entitiesToSpawn+2), function()
+				ply.KBDuplicator["undoConstruction"] = ply.KBDuplicator["undoConstruction"] or {}
+
+				undo.Create("KBDuplicator")
+				for k, v in pairs(ply.KBDuplicator["undoConstruction"]) do 
+					if not IsValid(v) then continue end
+
+					undo.AddEntity(v)
+					undo.SetPlayer(ply)
+				end
+				undo.Finish()
+
+				ply.KBDuplicator["undoConstruction"] = {}
 			end)
 	
 			net.Start("KBDuplicator:MainNet")
@@ -2012,26 +2083,26 @@ else
 		elseif uInt == 2 then
 			local tableToSend = {}
 			local countEntity = net.ReadUInt(32)
-
+			
 			for i=1, countEntity do
 				local entIndex = net.ReadUInt(12)
 				tableToSend[entIndex] = tableToSend[entIndex] or {}
-
+				
 				local ent = Entity(entIndex)
 				if not IsValid(ent) then continue end
-
+				
 				local contraints = constraint.GetTable(ent)
 				local entTable = ent:GetTable()
 				local entClass = ent:GetClass()
-
+				
 				if istable(KBDuplicator.PropertiesEnt[entClass]) then
 					if isfunction(KBDuplicator.PropertiesEnt[entClass]["save"]) && KBDuplicator.PropertiesEnt[entClass]["accepted"] then
-
+						
 						tableToSend[entIndex][entClass] = tableToSend[entIndex][entClass] or {}
 						tableToSend[entIndex][entClass][#tableToSend[entIndex][entClass] + 1] = KBDuplicator.PropertiesEnt[entClass]["save"](entTable, ent)
 					end
 				end
-	
+
 				for k, v in pairs(contraints) do
 					if not istable(KBDuplicator.Constraints[v.Type]) then continue end
 					if not isfunction(KBDuplicator.Constraints[v.Type]["save"]) then continue end
