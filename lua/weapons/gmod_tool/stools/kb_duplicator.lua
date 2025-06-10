@@ -21,7 +21,7 @@ local function checkIfOwner(ent, ply)
 end
 
 local function getTrace(ply, posAdd2)
-	local trace = util.TraceLine( {
+	local trace = util.TraceLine({
 		start = ply:EyePos(),
 		endpos = ply:EyePos() + ply:EyeAngles():Forward() * posAdd2,
 		filter = function(ent) if ent:GetClass() == "prop_physics" then return true end end
@@ -892,7 +892,7 @@ KBDuplicator.Language = {
 		["problemSpawn"] = "Problem with the spawn of the duplication (the error was copied to the clipboard)",
 		["noSpam"] = "Please wait before use again the tool",
 		["singlePlayer"] = "You are on singleplayer please lunch a pear to pear server to use the tool",
-		["pos2Label"] = "Increase point 2 distance",
+		["pos2Label"] = "Increase the placement distance",
 	},
 	["fr"] = {
 		["toolName"] = "KB Duplicator",
@@ -915,7 +915,7 @@ KBDuplicator.Language = {
 		["problemSpawn"] = "Problème lors de l'apparition de la duplication (l'erreur à été copié dans le presse papier)",
 		["noSpam"] = "Veuillez attendre avant de réutiliser le tool",
 		["singlePlayer"] = "Vous êtes en solo veuillez lancer en pear to pear pour utiliser l'outil",
-		["pos2Label"] = "Augmenter la distance du point 2",
+		["pos2Label"] = "Augmenter la distance de placement",
 	},
 }
 
@@ -1064,7 +1064,7 @@ if CLIENT then
 		local entites = constructionTable["entities"] or {}
 		local infos = constructionTable["infos"] or {}
 
-		local pos2 = infos["pos2"] or 200
+		local pos2 = KBDuplicator["pos2"]
 
 		if not isvector(KBDuplicator["originalPos"][1]) then return end
 		if not isvector(KBDuplicator["originalPos"][2]) then return end
@@ -1444,6 +1444,9 @@ if CLIENT then
 		sliderPos2.OnValueChanged = function(self, value)
 			KBDuplicator["pos2"] = value
 		end
+		if isnumber(KBDuplicator["pos2"]) then
+			sliderPos2:SetValue(KBDuplicator["pos2"])
+		end
 	
 		scrollConstructions = vgui.Create("DScrollPanel", mainPanel)
 		scrollConstructions:SetSize(mainPanel:GetWide(), KBDuplicator.ScrH*0.225)
@@ -1489,8 +1492,13 @@ if CLIENT then
 	end
 
 	function TOOL:Deploy()
-		KBDuplicator["rotation"] = 180
-		KBDuplicator["pos2"] = 200
+		if not KBDuplicator["rotation"] then
+			KBDuplicator["rotation"] = 180
+		end
+
+		if not KBDuplicator["pos2"] then
+			KBDuplicator["pos2"] = 200
+		end
 	end
 	
 	function TOOL:LeftClick()
@@ -1504,8 +1512,8 @@ if CLIENT then
 			if KBDuplicator["drawingEnt"] then
 				sendDrawConstructions(fileName)
 			else
-				
 				KBDuplicator["originalPos"] = KBDuplicator["originalPos"] or {}
+				
 				if not isvector(KBDuplicator["originalPos"][1]) then
 					local trace = getTrace(KBDuplicator.LocalPlayer, 200)
 					
@@ -1573,7 +1581,7 @@ if CLIENT then
 		KBDuplicator["rotation"] = KBDuplicator["rotation"] or 180
 
 		if istable(KBDuplicator["drawingEnt"]) then
-			local trace = getTrace(KBDuplicator.LocalPlayer, 200)
+			local trace = getTrace(KBDuplicator.LocalPlayer, KBDuplicator["pos2"])
 			
 			local pos1 = (KBDuplicator["pastToOrigin"] and KBDuplicator["originalPos"][1] or trace.HitPos)
 			local pos2 = LocalToWorld(KBDuplicator["difPos"], KBDuplicator.Constants["angle0"], pos1, KBDuplicator.Constants["angle0"])
@@ -1598,14 +1606,12 @@ if CLIENT then
 
 		KBDuplicator["rotation"] = KBDuplicator["rotation"] or 180
 
-		local trace = getTrace(KBDuplicator.LocalPlayer, 200)
+		local trace = getTrace(KBDuplicator.LocalPlayer, KBDuplicator["pos2"])
 		
 		local posToScreen1, posToScreen2
 		local pos1 = (not KBDuplicator["drawingEnt"] and KBDuplicator["originalPos"][1] or KBDuplicator["pastToOrigin"] and KBDuplicator["originalPos"][1] or trace.HitPos)
 		if not isvector(pos1) then return end
 		posToScreen1 = pos1:ToScreen()
-
-		local trace = getTrace(KBDuplicator.LocalPlayer, KBDuplicator["pos2"])
 
 		local pos2 = (not KBDuplicator["drawingEnt"] and (KBDuplicator["originalPos"][2] and KBDuplicator["originalPos"][2] or trace.HitPos) or LocalToWorld(KBDuplicator["difPos"], KBDuplicator.Constants["angle0"], pos1, (KBDuplicator["pastToOrigin"] and KBDuplicator.Constants["angle0"] or Angle(0, KBDuplicator.LocalPlayer:EyeAngles().y + KBDuplicator["rotation"], 0))))
 		if not isvector(pos2) then return end
@@ -1636,7 +1642,7 @@ if CLIENT then
 
 		if not KBDuplicator or not KBDuplicator["drawingEnt"] then return end
 		
-		local trace = getTrace(KBDuplicator.LocalPlayer, 200)
+		local trace = getTrace(KBDuplicator.LocalPlayer, KBDuplicator["pos2"])
 		local pos1 = (KBDuplicator["pastToOrigin"] and KBDuplicator["originalPos"][1] or trace.HitPos)
 		local pos2 = LocalToWorld(KBDuplicator["difPos"], KBDuplicator.Constants["angle0"], pos1, KBDuplicator.Constants["angle0"])
 
@@ -1744,7 +1750,6 @@ else
 		net.Send(ply)
 	end
 	
-
 	net.Receive("KBDuplicator:MainNet", function(len, ply)
 		ply.KBDuplicator = ply.KBDuplicator or {}
 
@@ -1767,6 +1772,16 @@ else
 		local canDuplicate = hook.Run("KBDuplicator:CanDuplicate", ply)
 		if canDuplicate == false then return end
 
+		local canTool, msg = hook.Run("CanTool", ply, ply:GetEyeTrace(), "kb_duplicator", tools)
+
+		if canTool == false then
+			if isstring(msg) and #msg > 0 then
+				createNotify(ply, msg, 1, 5)
+			end
+
+			return 
+		end
+
 		--[[ Spawn protection ]]
 		if uInt == 1 then
 			local steamId = ply:SteamID64()
@@ -1784,17 +1799,12 @@ else
 			local rotation = net.ReadUInt(10)
 			local pos2Add = net.ReadUInt(16)
 
-			local trace = getTrace(ply, 200)
+			local trace = getTrace(ply, pos2Add)
 
 			local pos1 = (pastToOrigin and originalPos1 or trace.HitPos)
 			local pos2 = LocalToWorld(difPos, KBDuplicator.Constants["angle0"], pos1, KBDuplicator.Constants["angle0"])
 
 			local dir = (pos2 - pos1):Angle() + (pastToOrigin and KBDuplicator.Constants["angle0"] or Angle(0, ply:EyeAngles().y + rotation, 0))
-			
-			if pos1:DistToSqr(ply:GetPos()) > 5000000 && hitPos:DistToSqr(ply:GetPos()) > 5000000 then
-				createNotify(ply, getSentence("tooFar"), 1, 5)
-				return 
-			end
 			
 			local entitiesToSpawn = {}
 			local toolsTable = tools:GetTable()
@@ -2001,6 +2011,13 @@ else
 				end
 
 				prop:Activate()
+				prop:SetCollisionGroup(COLLISION_GROUP_WEAPON)
+
+				timer.Simple(math.random(3, 6), function()
+					if not IsValid(prop) then return end
+
+					prop:SetCollisionGroup(COLLISION_GROUP_NONE)
+				end)
 
 				ply.KBDuplicator["undoConstruction"] = ply.KBDuplicator["undoConstruction"] or {}
 				ply.KBDuplicator["undoConstruction"][#ply.KBDuplicator["undoConstruction"] + 1] = prop
@@ -2082,7 +2099,9 @@ else
 			net.Send(ply)
 		elseif uInt == 2 then
 			local tableToSend = {}
-			local countEntity = net.ReadUInt(32)
+			local countEntity = net.ReadUInt(14)
+
+			countEntity = math.Clamp(countEntity, 1, 16000)
 			
 			for i=1, countEntity do
 				local entIndex = net.ReadUInt(12)
