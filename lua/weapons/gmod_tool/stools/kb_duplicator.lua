@@ -892,7 +892,7 @@ KBDuplicator.Language = {
 		["problemSpawn"] = "Problem with the spawn of the duplication (the error was copied to the clipboard)",
 		["noSpam"] = "Please wait before use again the tool",
 		["singlePlayer"] = "You are on singleplayer please lunch a pear to pear server to use the tool",
-		["pos2Label"] = "Increase the placement distance",
+		["pos2Label"] = "Extending the duplicator's targeting distance",
 	},
 	["fr"] = {
 		["toolName"] = "KB Duplicator",
@@ -915,7 +915,7 @@ KBDuplicator.Language = {
 		["problemSpawn"] = "Problème lors de l'apparition de la duplication (l'erreur à été copié dans le presse papier)",
 		["noSpam"] = "Veuillez attendre avant de réutiliser le tool",
 		["singlePlayer"] = "Vous êtes en solo veuillez lancer en pear to pear pour utiliser l'outil",
-		["pos2Label"] = "Augmenter la distance de placement",
+		["pos2Label"] = "Allonger la distance de ciblage du duplicator",
 	},
 }
 
